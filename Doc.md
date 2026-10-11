@@ -229,6 +229,51 @@ print(f"Memory recorded successfully with ID: {memory_id}")
 
 ---
 
+#### 2b. Built-in Embedding Adapters (`remember_text` & `recall_text`)
+
+To avoid having to compute embeddings manually before storing or querying memories, Vivvy provides built-in embedding adapters via `vivvy.embeddings`:
+
+```python
+from vivvy.embeddings import OpenAIEmbedder, SentenceTransformersEmbedder, OllamaEmbedder
+
+# Option A: OpenAI API (or OpenAI-compatible endpoints)
+embedder = OpenAIEmbedder(model="text-embedding-3-small")
+
+# Option B: Local Sentence-Transformers model
+# embedder = SentenceTransformersEmbedder(model_name_or_path="all-MiniLM-L6-v2")
+
+# Option C: Local Ollama HTTP service
+# embedder = OllamaEmbedder(model="nomic-embed-text")
+
+# Dimensions and model name are automatically inferred:
+store = vivvy.MemoryStore.open(path="./agent_memory_data", embedder=embedder)
+
+# Store text directly (embeddings computed & validated automatically)
+memory_id = store.remember_text(
+    tenant_id="acme_corp",
+    namespace="support_chat",
+    content="User prefers Python over JavaScript for backend examples.",
+    kind="preference",
+    importance=0.9
+)
+
+# Recall text directly (hybrid dense vector + FTS5 lexical recall via RRF)
+hits = store.recall_text(
+    tenant_id="acme_corp",
+    namespace="support_chat",
+    query_text="Python backend examples",
+    limit=5
+)
+for mem_id, content, score in hits:
+    print(f"[{score:.4f}] {content}")
+```
+
+##### Model Integrity & Dimensionality Enforcement
+- **Refusal to mix models**: Embeddings from different models reside in incompatible vector spaces. Attempting to pass an embedder whose model does not match `store.embedding_model`, or reopening an existing on-disk store with a different `embedding_model`, raises a clear error.
+- **Dimensionality validation**: If an embedder declares or produces vectors whose length does not match `store.dimensions`, Vivvy raises an immediate `ValueError` before modifying storage.
+
+---
+
 #### 3. Memory Kinds & Semantic Categorization
 
 Vivvy supports five semantic memory categories:
