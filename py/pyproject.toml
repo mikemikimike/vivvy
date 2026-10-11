@@ -24,6 +24,11 @@ Homepage = "https://github.com/one2seven-oss/vivvy"
 Repository = "https://github.com/one2seven-oss/vivvy"
 Documentation = "https://github.com/one2seven-oss/vivvy/blob/main/Doc.md"
 
+[project.optional-dependencies]
+openai = ["openai>=1.0.0"]
+sentence-transformers = ["sentence-transformers>=2.2.0"]
+all = ["openai>=1.0.0", "sentence-transformers>=2.2.0"]
+
 [tool.maturin]
 features = ["pyo3/extension-module"]
-module-name = "vivvy"
+module-name = "vivvy._vivvy"
