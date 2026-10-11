@@ -325,6 +325,122 @@ impl Repository {
         Ok(())
     }
 
+    /// Enforce that this store is opened with the same embedding model and dimensions
+    /// it was created with, refusing to mix incompatible embedding models or dimensions.
+    pub fn enforce_store_metadata(&self, configured_model: &str, configured_dims: usize) -> Result<()> {
+        let conn = self.conn.lock();
+
+        // 1. Embedding Model check
+        let existing_model: Option<String> = conn
+            .query_row(
+                "SELECT value FROM store_meta WHERE key = 'embedding_model'",
+                [],
+                |row| row.get(0),
+            )
+            .optional()
+            .map_err(|e| MemoryError::DatabaseError {
+                code: ErrorCode::DatabaseError,
+                message: format!("Failed to read store metadata: {}", e),
+            })?;
+
+        if let Some(existing) = existing_model {
+            if existing != configured_model {
+                return Err(MemoryError::invalid_input(format!(
+                    "store was created with embedding_model '{}' but opened with '{}'; refuse to mix incompatible embedding models",
+                    existing, configured_model
+                )));
+            }
+        } else {
+            // Check legacy rows in memories table if any exist
+            let legacy_model: Option<String> = conn
+                .query_row(
+                    "SELECT embedding_model FROM memories LIMIT 1",
+                    [],
+                    |row| row.get(0),
+                )
+                .optional()
+                .map_err(|e| MemoryError::DatabaseError {
+                    code: ErrorCode::DatabaseError,
+                    message: format!("Failed to check legacy memories: {}", e),
+                })?;
+
+            if let Some(legacy) = legacy_model {
+                if legacy != configured_model {
+                    return Err(MemoryError::invalid_input(format!(
+                        "store was created with embedding_model '{}' but opened with '{}'; refuse to mix incompatible embedding models",
+                        legacy, configured_model
+                    )));
+                }
+            }
+
+            conn.execute(
+                "INSERT INTO store_meta (key, value) VALUES ('embedding_model', ?)",
+                params![configured_model],
+            )
+            .map_err(|e| MemoryError::DatabaseError {
+                code: ErrorCode::DatabaseError,
+                message: format!("Failed to record embedding_model: {}", e),
+            })?;
+        }
+
+        // 2. Embedding Dimensions check
+        let existing_dims: Option<String> = conn
+            .query_row(
+                "SELECT value FROM store_meta WHERE key = 'dimensions'",
+                [],
+                |row| row.get(0),
+            )
+            .optional()
+            .map_err(|e| MemoryError::DatabaseError {
+                code: ErrorCode::DatabaseError,
+                message: format!("Failed to read store metadata: {}", e),
+            })?;
+
+        if let Some(dims_str) = existing_dims {
+            if let Ok(dims) = dims_str.parse::<usize>() {
+                if dims != configured_dims {
+                    return Err(MemoryError::invalid_input(format!(
+                        "store was created with dimensions {} but opened with {}; refuse to mix incompatible dimensions",
+                        dims, configured_dims
+                    )));
+                }
+            }
+        } else {
+            // Check legacy rows in memories table if any exist
+            let legacy_dims: Option<usize> = conn
+                .query_row(
+                    "SELECT embedding_dims FROM memories LIMIT 1",
+                    [],
+                    |row| row.get(0),
+                )
+                .optional()
+                .map_err(|e| MemoryError::DatabaseError {
+                    code: ErrorCode::DatabaseError,
+                    message: format!("Failed to check legacy memories: {}", e),
+                })?;
+
+            if let Some(legacy) = legacy_dims {
+                if legacy != configured_dims {
+                    return Err(MemoryError::invalid_input(format!(
+                        "store was created with dimensions {} but opened with {}; refuse to mix incompatible dimensions",
+                        legacy, configured_dims
+                    )));
+                }
+            }
+
+            conn.execute(
+                "INSERT INTO store_meta (key, value) VALUES ('dimensions', ?)",
+                params![configured_dims.to_string()],
+            )
+            .map_err(|e| MemoryError::DatabaseError {
+                code: ErrorCode::DatabaseError,
+                message: format!("Failed to record dimensions: {}", e),
+            })?;
+        }
+
+        Ok(())
+    }
+
     #[inline]
     fn enc_version(&self) -> i64 {
         if self.cipher.is_some() {

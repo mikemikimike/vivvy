@@ -261,6 +261,7 @@ fn parse_scope(
 #[pyclass(name = "MemoryStore")]
 struct PyMemoryStore {
     inner: std::sync::Arc<vivvy_memory::MemoryStore>,
+    embedder: std::sync::Mutex<Option<Py<PyAny>>>,
 }
 
 #[pymethods]
@@ -285,7 +286,28 @@ impl PyMemoryStore {
 
         Ok(Self {
             inner: std::sync::Arc::new(store),
+            embedder: std::sync::Mutex::new(None),
         })
+    }
+
+    #[getter]
+    fn dimensions(&self) -> usize {
+        self.inner.config().dimensions()
+    }
+
+    #[getter]
+    fn embedding_model(&self) -> &str {
+        self.inner.config().embedding_model()
+    }
+
+    #[getter]
+    fn embedder(&self, py: Python<'_>) -> Option<Py<PyAny>> {
+        self.embedder.lock().unwrap().as_ref().map(|obj| obj.clone_ref(py))
+    }
+
+    #[setter]
+    fn set_embedder(&self, value: Option<Py<PyAny>>) {
+        *self.embedder.lock().unwrap() = value;
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -734,7 +756,7 @@ impl PyMemoryStore {
 }
 
 #[pymodule]
-fn vivvy(m: &Bound<'_, PyModule>) -> PyResult<()> {
+fn _vivvy(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<Index>()?;
     m.add_class::<PyMemoryStore>()?;
     Ok(())
