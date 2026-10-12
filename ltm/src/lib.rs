@@ -18,7 +18,8 @@ pub use health::StoreHealth;
 pub use index_adapter::{InMemoryTestIndex, VectorIndex, VivvyVectorIndex};
 pub use model::{
     ContextFormatOptions, ForgetRequest, MemoryFilter, MemoryKind, MemoryRecord, MemoryStatus,
-    RecallExplanation, RecallItem, RecallRequest, RecallResponse, RememberRequest, UpdateRequest,
+    RecallExplanation, RecallItem, RecallRequest, RecallResponse, RememberRequest, ScoringConfig,
+    ScoringConfigBuilder, UpdateRequest,
 };
 pub use namespace::MemoryScope;
 pub use repository::Repository;

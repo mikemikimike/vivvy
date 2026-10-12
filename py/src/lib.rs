@@ -473,6 +473,7 @@ impl PyMemoryStore {
             filters,
             include_explanations,
             mmr_lambda,
+            scoring: Default::default(),
         };
 
         let store = self.inner.clone();
@@ -531,6 +532,7 @@ impl PyMemoryStore {
             filters,
             include_explanations: false,
             mmr_lambda: Some(0.5),
+            scoring: Default::default(),
         };
 
         let default_options = vivvy_memory::ContextFormatOptions::default();

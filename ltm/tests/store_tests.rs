@@ -77,6 +77,7 @@ fn test_recall_and_explainability() {
             filters: MemoryFilter::default(),
             include_explanations: true,
             mmr_lambda: None,
+            scoring: Default::default(),
         })
         .unwrap();
 
@@ -97,6 +98,7 @@ fn test_recall_and_explainability() {
             filters: MemoryFilter::default(),
             include_explanations: false,
             mmr_lambda: None,
+            scoring: Default::default(),
         })
         .unwrap();
 
@@ -143,6 +145,7 @@ fn test_crash_recovery_rebuild() {
                 filters: MemoryFilter::default(),
                 include_explanations: true,
                 mmr_lambda: None,
+                scoring: Default::default(),
             })
             .unwrap();
 
@@ -238,6 +241,7 @@ fn test_update_revision_concurrency_and_forget() {
             filters: MemoryFilter::default(),
             include_explanations: false,
             mmr_lambda: None,
+            scoring: Default::default(),
         })
         .unwrap();
     assert_eq!(recall.items.len(), 0);
@@ -308,6 +312,7 @@ fn test_mmr_diversity_ranking() {
             filters: MemoryFilter::default(),
             include_explanations: false,
             mmr_lambda: Some(0.5),
+            scoring: Default::default(),
         })
         .unwrap();
 
@@ -369,6 +374,7 @@ fn test_hybrid_recall_fts_and_rrf() {
             filters: MemoryFilter::default(),
             include_explanations: true,
             mmr_lambda: None,
+            scoring: Default::default(),
         })
         .unwrap();
 
@@ -425,6 +431,7 @@ fn test_remember_batch_and_forget_batch() {
             filters: MemoryFilter::default(),
             include_explanations: false,
             mmr_lambda: None,
+            scoring: Default::default(),
         })
         .unwrap();
     assert_eq!(recall.items.len(), 5);
@@ -443,6 +450,7 @@ fn test_remember_batch_and_forget_batch() {
             filters: MemoryFilter::default(),
             include_explanations: false,
             mmr_lambda: None,
+            scoring: Default::default(),
         })
         .unwrap();
     assert_eq!(recall_after.items.len(), 2);
@@ -513,6 +521,7 @@ fn test_kv_metadata_filtering_in_recall() {
             filters: filter_alpha,
             include_explanations: false,
             mmr_lambda: None,
+            scoring: Default::default(),
         })
         .unwrap();
 
@@ -536,6 +545,7 @@ fn test_kv_metadata_filtering_in_recall() {
             filters: filter_beta,
             include_explanations: false,
             mmr_lambda: None,
+            scoring: Default::default(),
         })
         .unwrap();
 
@@ -559,6 +569,7 @@ fn test_kv_metadata_filtering_in_recall() {
             filters: filter_gamma,
             include_explanations: false,
             mmr_lambda: None,
+            scoring: Default::default(),
         })
         .unwrap();
 
@@ -602,6 +613,7 @@ fn test_format_context_token_budget() {
         filters: MemoryFilter::default(),
         include_explanations: false,
         mmr_lambda: None,
+        scoring: Default::default(),
     };
 
     let options = ContextFormatOptions {
@@ -654,6 +666,7 @@ fn test_format_context_template_placeholders() {
         filters: MemoryFilter::default(),
         include_explanations: false,
         mmr_lambda: None,
+        scoring: Default::default(),
     };
 
     let options = ContextFormatOptions {
@@ -767,6 +780,7 @@ fn test_time_window_filtering_in_recall() {
             filters: filter_t2,
             include_explanations: false,
             mmr_lambda: None,
+            scoring: Default::default(),
         })
         .unwrap();
 
@@ -787,6 +801,7 @@ fn test_time_window_filtering_in_recall() {
             filters: filter_after_t2,
             include_explanations: false,
             mmr_lambda: None,
+            scoring: Default::default(),
         })
         .unwrap();
 
@@ -806,6 +821,7 @@ fn test_time_window_filtering_in_recall() {
             filters: filter_before_t2,
             include_explanations: false,
             mmr_lambda: None,
+            scoring: Default::default(),
         })
         .unwrap();
 
@@ -852,6 +868,7 @@ fn test_time_window_empty_range() {
             filters: filter_invalid,
             include_explanations: false,
             mmr_lambda: None,
+            scoring: Default::default(),
         })
         .unwrap();
 
@@ -917,6 +934,7 @@ fn test_fts_time_window_filtering() {
             filters: filter,
             include_explanations: true,
             mmr_lambda: None,
+            scoring: Default::default(),
         })
         .unwrap();
 
@@ -984,6 +1002,7 @@ fn test_stale_index_files_cleaned_up_on_open() {
             filters: Default::default(),
             include_explanations: false,
             mmr_lambda: None,
+            scoring: Default::default(),
         })
         .unwrap();
     assert_eq!(recall.items.len(), 1);

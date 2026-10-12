@@ -104,6 +104,7 @@ fn test_cross_tenant_forget_isolation_does_not_tombstone_vector_index() {
             filters: MemoryFilter::default(),
             include_explanations: false,
             mmr_lambda: None,
+            scoring: Default::default(),
         })
         .unwrap();
 
@@ -126,6 +127,7 @@ fn test_cross_tenant_forget_isolation_does_not_tombstone_vector_index() {
             filters: MemoryFilter::default(),
             include_explanations: false,
             mmr_lambda: None,
+            scoring: Default::default(),
         })
         .unwrap();
 
@@ -219,6 +221,7 @@ fn test_encrypted_round_trip_returns_plaintext() {
             filters: MemoryFilter::default(),
             include_explanations: false,
             mmr_lambda: None,
+            scoring: Default::default(),
         })
         .unwrap();
     assert_eq!(recall.items.len(), 1);
@@ -325,6 +328,7 @@ fn test_blind_index_lexical_recall_under_encryption() {
             filters: MemoryFilter::default(),
             include_explanations: false,
             mmr_lambda: None,
+            scoring: Default::default(),
         })
         .unwrap();
 

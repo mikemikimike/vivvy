@@ -159,6 +159,7 @@ fn run_memory_store_benchmark(dims: usize, initial_records: usize, test_queries:
                 filters: MemoryFilter::default(),
                 include_explanations: true,
                 mmr_lambda: Some(0.7),
+                scoring: Default::default(),
             })
             .unwrap();
 

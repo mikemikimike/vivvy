@@ -139,6 +139,7 @@ fn test_resumable_vacuum_tombstones_scrubs_deleted_records() {
             filters: MemoryFilter::default(),
             include_explanations: false,
             mmr_lambda: None,
+            scoring: Default::default(),
         })
         .unwrap();
 
@@ -183,6 +184,7 @@ fn test_rebuild_index_restores_active_records() {
             filters: MemoryFilter::default(),
             include_explanations: false,
             mmr_lambda: None,
+            scoring: Default::default(),
         })
         .unwrap();
 
@@ -291,6 +293,7 @@ fn test_atomic_online_backup_and_restore() {
             filters: MemoryFilter::default(),
             include_explanations: false,
             mmr_lambda: None,
+            scoring: Default::default(),
         })
         .unwrap();
 

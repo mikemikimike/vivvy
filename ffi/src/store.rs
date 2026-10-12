@@ -342,6 +342,7 @@ pub unsafe extern "C" fn vivvy_store_recall(
             filters,
             include_explanations: opts.include_explanations,
             mmr_lambda: opts.mmr_lambda,
+            scoring: Default::default(),
         };
 
         let resp = store_ref.recall(req)?;
@@ -422,6 +423,7 @@ pub unsafe extern "C" fn vivvy_store_format_context(
             filters,
             include_explanations: false,
             mmr_lambda: opts.mmr_lambda,
+            scoring: Default::default(),
         };
 
         let format_opts = match format_str {
