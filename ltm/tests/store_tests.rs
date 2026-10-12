@@ -988,3 +988,65 @@ fn test_stale_index_files_cleaned_up_on_open() {
         .unwrap();
     assert_eq!(recall.items.len(), 1);
 }
+
+#[test]
+fn test_refuse_to_mix_models_and_dimensions_on_reopen() {
+    let dir = tempfile::tempdir().unwrap();
+
+    let cfg1 = MemoryConfig::builder(dir.path())
+        .dimensions(4)
+        .embedding_model("model-v1")
+        .build()
+        .unwrap();
+
+    // 1. Open and write a memory
+    {
+        let store = MemoryStore::open(cfg1).unwrap();
+        let scope = MemoryScope::new("t1", "ns1").unwrap();
+        store
+            .remember(RememberRequest {
+                operation_id: None,
+                scope,
+                content: "Fact 1".into(),
+                embedding: vec![0.1, 0.2, 0.3, 0.4],
+                kind: MemoryKind::Fact,
+                importance: 0.8,
+                expires_at_ms: None,
+                metadata: HashMap::new(),
+                source: HashMap::new(),
+            })
+            .unwrap();
+    }
+
+    // 2. Reopen with different embedding_model -> must fail
+    let cfg_diff_model = MemoryConfig::builder(dir.path())
+        .dimensions(4)
+        .embedding_model("model-v2")
+        .build()
+        .unwrap();
+    let err_model = MemoryStore::open(cfg_diff_model).err().unwrap();
+    assert!(
+        err_model.to_string().contains("refuse to mix incompatible embedding models"),
+        "Unexpected error: {err_model}"
+    );
+
+    // 3. Reopen with different dimensions -> must fail
+    let cfg_diff_dims = MemoryConfig::builder(dir.path())
+        .dimensions(8)
+        .embedding_model("model-v1")
+        .build()
+        .unwrap();
+    let err_dims = MemoryStore::open(cfg_diff_dims).err().unwrap();
+    assert!(
+        err_dims.to_string().contains("refuse to mix incompatible dimensions"),
+        "Unexpected error: {err_dims}"
+    );
+
+    // 4. Reopen with matching config -> must succeed
+    let cfg_matching = MemoryConfig::builder(dir.path())
+        .dimensions(4)
+        .embedding_model("model-v1")
+        .build()
+        .unwrap();
+    assert!(MemoryStore::open(cfg_matching).is_ok());
+}

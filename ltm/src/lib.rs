@@ -71,6 +71,7 @@ impl MemoryStore {
             cipher,
             config.lexical_mode(),
         )?);
+        repo.enforce_store_metadata(config.embedding_model(), config.dimensions())?;
 
         let index = Arc::new(VivvyVectorIndex::new(config.dimensions(), Metric::Cosine)?);
         let coordinator = JournalCoordinator::new(repo.clone(), index.clone());
