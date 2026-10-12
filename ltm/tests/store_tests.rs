@@ -1007,3 +1007,92 @@ fn test_stale_index_files_cleaned_up_on_open() {
         .unwrap();
     assert_eq!(recall.items.len(), 1);
 }
+
+#[test]
+fn test_custom_scoring_weights_and_explanation_diagnostics() {
+    let dir = tempdir().unwrap();
+    let config = MemoryConfig::builder(dir.path())
+        .dimensions(3)
+        .embedding_model("test-model")
+        .build()
+        .unwrap();
+
+    let store = MemoryStore::open(config).unwrap();
+    let scope = MemoryScope::new("acme", "test").unwrap();
+
+    let mem_id = store
+        .remember(RememberRequest {
+            operation_id: None,
+            scope: scope.clone(),
+            content: "Domain fact with importance".into(),
+            embedding: vec![1.0, 0.0, 0.0],
+            kind: MemoryKind::Fact,
+            importance: 0.8,
+            expires_at_ms: None,
+            metadata: HashMap::new(),
+            source: HashMap::new(),
+        })
+        .unwrap();
+
+    // 1. Recall with default scoring -> verify explanation contains default_v1_scoring
+    let default_recall = store
+        .recall(RecallRequest {
+            scope: scope.clone(),
+            query_embedding: vec![1.0, 0.0, 0.0],
+            query_text: None,
+            limit: 5,
+            filters: Default::default(),
+            include_explanations: true,
+            mmr_lambda: None,
+            scoring: ScoringConfig::default(),
+        })
+        .unwrap();
+
+    assert_eq!(default_recall.items.len(), 1);
+    let default_expl = default_recall.items[0].explanation.as_ref().unwrap();
+    assert!(
+        default_expl.policy_notes.contains(&"default_v1_scoring".to_string()),
+        "Expected default_v1_scoring in policy notes, got {:?}",
+        default_expl.policy_notes
+    );
+    assert_eq!(default_recall.items[0].memory.id, mem_id);
+
+    // 2. Recall with custom scoring (similarity 0.90, importance 0.10, recency 0.0, half_life 14.0d)
+    let custom_scoring = ScoringConfig::builder()
+        .similarity(0.90)
+        .importance(0.10)
+        .recency(0.0)
+        .reinforcement(0.0)
+        .half_life_days(14.0)
+        .build()
+        .unwrap();
+
+    let custom_recall = store
+        .recall(RecallRequest {
+            scope,
+            query_embedding: vec![1.0, 0.0, 0.0],
+            query_text: None,
+            limit: 5,
+            filters: Default::default(),
+            include_explanations: true,
+            mmr_lambda: None,
+            scoring: custom_scoring,
+        })
+        .unwrap();
+
+    assert_eq!(custom_recall.items.len(), 1);
+    let custom_expl = custom_recall.items[0].explanation.as_ref().unwrap();
+    assert!(
+        custom_expl
+            .policy_notes
+            .iter()
+            .any(|note| note.starts_with("custom_scoring(")),
+        "Expected custom_scoring note, got {:?}",
+        custom_expl.policy_notes
+    );
+
+    // Similarity is 1.0 (cosine orthogonal 0 distance -> sim 1.0), importance is 0.8
+    // Total score = 0.90 * 1.0 + 0.10 * 0.8 = 0.90 + 0.08 = 0.98
+    let expected_score = 0.90 * custom_expl.similarity_score + 0.10 * custom_expl.importance_score;
+    assert!((custom_expl.total_score - expected_score).abs() < 1e-4);
+}
