@@ -15,40 +15,46 @@ Two entry points, both in the `vivvy` module:
 
 ```python
 import vivvy
+from vivvy.embeddings import OpenAIEmbedder  # or SentenceTransformersEmbedder, OllamaEmbedder
 
+# 1. Connect embedding adapter (or use local sentence-transformers / ollama)
+embedder = OpenAIEmbedder(model="text-embedding-3-small")
+
+# Dimensions and model name are automatically inferred from embedder:
 store = vivvy.MemoryStore.open(
     path="./agent_memory_data",
-    dimensions=1536,
-    embedding_model="text-embedding-3-small",
+    embedder=embedder,
 )
 
-memory_id = store.remember(
+# 2. Store text directly — embeddings generated and validated automatically
+memory_id = store.remember_text(
     tenant_id="acme_corp",
     namespace="support_chat",
     content="User prefers Python over JavaScript for backend examples.",
-    embedding=[0.012, -0.045, 0.089] + [0.0] * 1533,
     kind="preference",   # preference | fact | instruction | context | episodic
     importance=0.9,
 )
 
-results = store.recall(
+# 3. Hybrid recall directly from query text (vector ANN fused with SQLite FTS5)
+results = store.recall_text(
     tenant_id="acme_corp",
     namespace="support_chat",
-    query_embedding=[0.012, -0.045, 0.089] + [0.0] * 1533,
-    query_text="Python backend examples",   # fused with vector search via RRF
+    query_text="Python backend examples",
     limit=5,
 )
 for mem_id, content, score in results:
     print(f"[{score:.4f}] {content}")
 
-# Or render straight into an LLM prompt, inside a fixed token budget:
-context = store.format_context(
+# 4. Or render straight into an LLM prompt inside a fixed token budget:
+context = store.format_context_text(
     tenant_id="acme_corp",
     namespace="support_chat",
-    query_embedding=[0.012, -0.045, 0.089] + [0.0] * 1533,
+    query_text="Python backend examples",
     max_tokens=1500,
 )
 ```
+
+You can also pass pre-computed float vectors via `store.remember(...)` and `store.recall(...)` if managing embeddings manually.
 
 ## Quick start: low-level vector index
 
