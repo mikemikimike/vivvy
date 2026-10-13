@@ -664,6 +664,56 @@ mod tests {
     }
 
     #[test]
+    fn test_scoring_config_validation() {
+        // 1. Negative weights
+        let neg_cfg = ScoringConfig {
+            weight_similarity: -0.1,
+            ..Default::default()
+        };
+        assert!(neg_cfg.validate().unwrap_err().to_string().contains("must be non-negative"));
+
+        // 2. NaNs and non-finite values
+        let nan_cfg = ScoringConfig {
+            weight_similarity: f32::NAN,
+            ..Default::default()
+        };
+        assert!(nan_cfg.validate().unwrap_err().to_string().contains("finite"));
+
+        // 3. Zero or negative half-life
+        let zero_half_life = ScoringConfig {
+            recency_half_life_days: 0.0,
+            ..Default::default()
+        };
+        assert!(zero_half_life.validate().unwrap_err().to_string().contains("strictly positive"));
+
+        let neg_half_life = ScoringConfig {
+            recency_half_life_days: -2.0,
+            ..Default::default()
+        };
+        assert!(neg_half_life.validate().unwrap_err().to_string().contains("strictly positive"));
+
+        // 4. All-zero weights
+        let all_zero = ScoringConfig {
+            weight_similarity: 0.0,
+            weight_importance: 0.0,
+            weight_recency: 0.0,
+            weight_reinforcement: 0.0,
+            recency_half_life_days: 7.0,
+        };
+        assert!(all_zero.validate().unwrap_err().to_string().contains("at least one scoring weight"));
+
+        // Valid configuration
+        let valid_cfg = ScoringConfig::builder()
+            .similarity(0.8)
+            .importance(0.2)
+            .recency(0.0)
+            .reinforcement(0.0)
+            .half_life_days(5.0)
+            .build();
+        assert!(valid_cfg.is_ok());
+    }
+
+    #[test]
     fn test_recall_request_validate_checks_scoring() {
         let scope = MemoryScope::new("t", "ns").unwrap();
         let mut req = RecallRequest::new(scope, vec![0.1, 0.2, 0.3], 5);

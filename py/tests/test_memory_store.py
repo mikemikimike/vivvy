@@ -448,6 +448,74 @@ def test_memory_store_time_window_filtering():
         assert "Old memory 1000ms ago" not in fmt_ctx
 
 
+def test_recall_with_custom_scoring_weights(tmp_path):
+    import vivvy
+    from vivvy.scoring import ScoringConfig
+
+    store = vivvy.MemoryStore.open(
+        path=str(tmp_path),
+        dimensions=2,
+        embedding_model="test-model"
+    )
+
+    # Insert two memories with different importance and vectors
+    id1 = store.remember(
+        tenant_id="acme",
+        namespace="default",
+        content="Document A",
+        embedding=[1.0, 0.0],
+        importance=0.1
+    )
+    id2 = store.remember(
+        tenant_id="acme",
+        namespace="default",
+        content="Document B",
+        embedding=[0.0, 1.0],
+        importance=1.0
+    )
+
+    # 1. Default recall
+    hits_default = store.recall(
+        tenant_id="acme",
+        namespace="default",
+        query_embedding=[1.0, 0.0],
+        limit=2
+    )
+    assert hits_default[0][0] == id1
+
+    # 2. Custom recall emphasizing importance
+    custom_scoring = {
+        "weight_similarity": 0.1,
+        "weight_importance": 0.8,
+        "weight_recency": 0.1,
+        "weight_reinforcement": 0.0
+    }
+    hits_custom = store.recall(
+        tenant_id="acme",
+        namespace="default",
+        query_embedding=[1.0, 0.0],
+        limit=2,
+        scoring_weights=custom_scoring
+    )
+    assert hits_custom[0][0] == id2
+
+    # 3. Invalid negative weights should raise ValueError
+    import pytest
+    with pytest.raises(ValueError, match="must be non-negative"):
+        store.recall(
+            tenant_id="acme",
+            namespace="default",
+            query_embedding=[1.0, 0.0],
+            scoring_weights={"weight_similarity": -1.0}
+        )
+
+
+def test_python_scoring_weights(tmp_path):
+    """Alias / validation test for matrix item test_python_scoring_weights."""
+    test_recall_with_custom_scoring_weights(tmp_path)
+
+
+
 
 
 
