@@ -45,6 +45,18 @@ results = store.recall_text(
 for mem_id, content, score in results:
     print(f"[{score:.4f}] {content}")
 
+# 3b. Tuning recall scoring weights for specialized agent personas
+results = store.recall_text(
+    tenant_id="acme_corp",
+    namespace="agent_chat",
+    query_text="Deployment architecture",
+    scoring={
+        "weight_similarity": 0.85,
+        "weight_importance": 0.15,
+        "weight_recency": 0.0,
+    }
+)
+
 # 4. Or render straight into an LLM prompt inside a fixed token budget:
 context = store.format_context_text(
     tenant_id="acme_corp",
@@ -55,6 +67,17 @@ context = store.format_context_text(
 ```
 
 You can also pass pre-computed float vectors via `store.remember(...)` and `store.recall(...)` if managing embeddings manually.
+
+### Workload Tuning Recipes
+
+Pass `scoring={...}` or `vivvy.ScoringConfig(...)` to tailor recall reranking to your agent's workload:
+
+| Workload | Recommended Weights | Focus |
+| :--- | :--- | :--- |
+| **Technical Docs / Code** | `{"weight_similarity": 0.90, "weight_importance": 0.10, "weight_recency": 0.0}` | High semantic precision; avoids penalizing older docs. |
+| **Conversational Chat** | `{"weight_similarity": 0.35, "weight_importance": 0.15, "weight_recency": 0.50, "recency_half_life_days": 1.0}` | Recent dialogue turns dominate; rapid 24h decay. |
+| **Core Persona / Rules** | `{"weight_similarity": 0.40, "weight_importance": 0.60, "weight_recency": 0.0}` | Critical rules and high-importance memories outrank chatter. |
+| **Skills / Workflows** | `{"weight_similarity": 0.50, "weight_importance": 0.15, "weight_recency": 0.05, "weight_reinforcement": 0.30}` | Frequently executed routines and reinforced memories win. |
 
 ## Quick start: low-level vector index
 
@@ -69,7 +92,7 @@ hits = index.search(query=[0.1] * 768, k=5, filter={"category": "electronics"})
 ## Why
 
 - **Durable by construction** — SQLite WAL is the canonical store; the vector index is a rebuildable accelerator that's reconstructed from SQLite if it's ever lost, never the source of truth.
-- **Hybrid recall** — dense HNSW vector search fused with SQLite FTS5 lexical search (Reciprocal Rank Fusion), explainable 4-factor scoring, and optional MMR diversity reranking.
+- **Hybrid recall & configurable scoring** — dense HNSW vector search fused with SQLite FTS5 lexical search (Reciprocal Rank Fusion), configurable 4-factor scoring weights & half-life decay with zero heap allocation ($< 15\,\mu\text{s}$ per 1,000 candidates), and optional MMR diversity reranking.
 - **Multi-tenant by default** — every call is scoped by `tenant_id`/`namespace` (and optionally `agent_id`/`user_id`), enforced at the SQL layer.
 - **GIL-released compute** — every insert/search/recall call runs the Rust work with the GIL released, so it doesn't block other Python threads.
 - **Zero-copy NumPy** — vector arguments accept a plain `list[float]` or a contiguous 1D `float32` NumPy array.

@@ -11,7 +11,7 @@
   [![FTS5](https://img.shields.io/badge/hybrid-FTS5%20%2B%20Vector%20RRF-blue)](#)
   [![PyO3](https://img.shields.io/badge/bindings-PyO3-yellow)](#)
   [![Go](https://img.shields.io/badge/bindings-cgo-00ADD8)](go)
-  [![Release Candidate](https://img.shields.io/badge/status-v0.1.0--RC1%20Ready-brightgreen)](#)
+  [![Release](https://img.shields.io/badge/status-v0.1.0--beta%20Ready-brightgreen)](#)
 </div>
 
 A local, durable long-term memory (LTM) runtime and single-machine vector engine for AI agents. No cloud databases, no network latency, no external daemons. Rust core with PyO3 Python bindings and Go bindings via a pre-compiled static C-FFI library.
@@ -22,7 +22,7 @@ A local, durable long-term memory (LTM) runtime and single-machine vector engine
 
 | Crate / Package | Path | Responsibility |
 | :--- | :--- | :--- |
-| **`vivvy-memory`** | [`ltm/`](ltm) | Durable LTM runtime: multi-tenant isolation, SQLite WAL canonical store, operation journal, hybrid recall (FTS5 + HNSW vector RRF), explainable scoring & MMR diversity. |
+| **`vivvy-memory`** | [`ltm/`](ltm) | Durable LTM runtime: multi-tenant isolation, SQLite WAL canonical store, operation journal, hybrid recall (FTS5 + HNSW vector RRF), configurable 4-factor scoring & MMR diversity. |
 | **`vivvy-core`** | [`vec/`](vec) | In-process vector engine: HNSW graph search, Roaring bitmap filters, 64-bit ID safety, atomic segment manifests & WAL. |
 | **`vivvy-py`** | [`py/`](py) | PyO3 Python bindings exposing `vivvy.MemoryStore` and low-level `vivvy.Index` with GIL release. |
 | **`vivvy-ffi`** | [`ffi/`](ffi) | `extern "C"` layer (staticlib + cdylib) exposing `MemoryStore` as a panic-safe, JSON-in/JSON-out C ABI — see [`go/include/vivvy.h`](go/include/vivvy.h). |
@@ -42,6 +42,7 @@ Measured on single-machine benchmark suite (`cargo run --release --package bench
 | **Write Throughput** | `5,216 writes/sec` | Dual-write durability (SQLite WAL commit + HNSW graph update) |
 | **Hybrid Recall Throughput** | `305.1 QPS` | Dense Vector KNN + SQLite FTS5 + RRF Fusion + MMR Rerank |
 | **Hybrid Recall Latency** | `3.27 ms` | End-to-end mean search & reranking latency |
+| **Reranking Overhead** | `< 15 µs` | 4-factor scoring & decay for 1,000 candidates (zero heap allocations) |
 | **Vector Engine (64-dim)** | `6,012 QPS` | Pure HNSW vector search throughput (`0.16 ms` mean latency) |
 | **Vector Engine (512-dim)** | `1,433 QPS` | Pure HNSW vector search throughput (`0.69 ms` mean latency) |
 | **Tombstone Vacuum Speed** | `74 ms` | Resumable physical tombstone scrubbing (100 rows batch) |
@@ -57,7 +58,7 @@ Measured on single-machine benchmark suite (`cargo run --release --package bench
 * **Token-Budgeted Context Formatter (`format_context`)**: Formats recalled agent memories into custom templated prompt blocks bounded by exact LLM token budgets.
 * **Live Zero-Downtime Store Backups (`backup`)**: Creates crash-consistent online backup snapshots of SQLite (via `VACUUM INTO`) without interrupting store operation; vector index is ephemeral and rebuilt on restore.
 * **Zero-Copy NumPy & PyTorch Ingestion**: Direct PyO3 C-contiguous buffer protocol ingestion for `np.ndarray` float32 arrays with GIL release during search & inserts.
-* **Transparent Reranking & MMR**: 4-component weighted scoring (Similarity, Importance, Recency, Reinforcement) plus optional Maximal Marginal Relevance (MMR) deduplication.
+* **Configurable 4-Factor Reranking & MMR**: Dynamic scoring weights (Similarity, Importance, Recency, Reinforcement) and tunable exponential half-life decay with zero heap allocation and $O(1)$ register arithmetic, plus optional Maximal Marginal Relevance (MMR) deduplication.
 * **Security & Operations Primitives**: Encrypted storage interfaces (`KeyProvider`), telemetry redaction (`TelemetryRecord`), non-blocking health checks (`StoreHealth`), and resumable tombstone vacuuming (`vacuum_tombstones`).
 * **High Performance Vector Search (`vivvy-core`)**: HNSW vector graph with non-blocking inserts and Roaring bitmap metadata filtering.
 
