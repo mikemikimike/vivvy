@@ -1096,3 +1096,345 @@ fn test_custom_scoring_weights_and_explanation_diagnostics() {
     let expected_score = 0.90 * custom_expl.similarity_score + 0.10 * custom_expl.importance_score;
     assert!((custom_expl.total_score - expected_score).abs() < 1e-4);
 }
+
+#[test]
+fn test_default_scoring_bit_identical_to_legacy_calculation() {
+    let dir = tempdir().unwrap();
+    let config = MemoryConfig::builder(dir.path())
+        .dimensions(3)
+        .embedding_model("test-model")
+        .build()
+        .unwrap();
+
+    let store = MemoryStore::open(config).unwrap();
+    let scope = MemoryScope::new("acme", "bit-exact-test").unwrap();
+
+    let mem_id = store
+        .remember(RememberRequest {
+            operation_id: None,
+            scope: scope.clone(),
+            content: "Memory for bit-for-bit equivalence".into(),
+            embedding: vec![0.8, 0.6, 0.0],
+            kind: MemoryKind::Fact,
+            importance: 0.65,
+            expires_at_ms: None,
+            metadata: HashMap::new(),
+            source: HashMap::new(),
+        })
+        .unwrap();
+
+    let recall = store
+        .recall(RecallRequest {
+            scope,
+            query_embedding: vec![1.0, 0.0, 0.0],
+            query_text: None,
+            limit: 5,
+            filters: Default::default(),
+            include_explanations: true,
+            mmr_lambda: None,
+            scoring: ScoringConfig::default(),
+        })
+        .unwrap();
+
+    assert_eq!(recall.items.len(), 1);
+    let item = &recall.items[0];
+    assert_eq!(item.memory.id, mem_id);
+    let expl = item.explanation.as_ref().unwrap();
+
+    // Recompute legacy formula using explanation factors:
+    let legacy_score = 0.70 * expl.similarity_score
+        + 0.15 * expl.importance_score
+        + 0.10 * expl.recency_score
+        + 0.05 * expl.reinforcement_score;
+
+    assert_eq!(
+        item.score.to_bits(),
+        legacy_score.to_bits(),
+        "Default scoring must be bit-for-bit identical to legacy constant calculation"
+    );
+}
+
+#[test]
+fn test_zero_recency_weight_ensures_memory_age_has_zero_impact() {
+    let dir = tempdir().unwrap();
+    let config = MemoryConfig::builder(dir.path())
+        .dimensions(3)
+        .embedding_model("test-model")
+        .build()
+        .unwrap();
+
+    let store = MemoryStore::open(config).unwrap();
+    let scope = MemoryScope::new("acme", "zero-recency-test").unwrap();
+
+    // Insert two memories with identical embeddings and importance
+    let fresh_id = store
+        .remember(RememberRequest {
+            operation_id: None,
+            scope: scope.clone(),
+            content: "Fresh memory".into(),
+            embedding: vec![1.0, 0.0, 0.0],
+            kind: MemoryKind::Fact,
+            importance: 0.8,
+            expires_at_ms: None,
+            metadata: HashMap::new(),
+            source: HashMap::new(),
+        })
+        .unwrap();
+
+    let old_id = store
+        .remember(RememberRequest {
+            operation_id: None,
+            scope: scope.clone(),
+            content: "Old memory".into(),
+            embedding: vec![1.0, 0.0, 0.0],
+            kind: MemoryKind::Fact,
+            importance: 0.8,
+            expires_at_ms: None,
+            metadata: HashMap::new(),
+            source: HashMap::new(),
+        })
+        .unwrap();
+
+    // Artificially age the old memory by 90 days in SQLite
+    let now_ms = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_millis() as i64;
+    let db_conn = rusqlite::Connection::open(dir.path().join("memory.db")).unwrap();
+    db_conn
+        .execute(
+            "UPDATE memories SET created_at_ms = ? WHERE id = ?",
+            rusqlite::params![now_ms - 90 * 86_400_000, old_id],
+        )
+        .unwrap();
+
+    // 1. With default scoring (recency weight = 0.10), fresh memory scores strictly higher than old memory
+    let default_recall = store
+        .recall(RecallRequest {
+            scope: scope.clone(),
+            query_embedding: vec![1.0, 0.0, 0.0],
+            query_text: None,
+            limit: 5,
+            filters: Default::default(),
+            include_explanations: true,
+            mmr_lambda: None,
+            scoring: ScoringConfig::default(),
+        })
+        .unwrap();
+
+    assert_eq!(default_recall.items.len(), 2);
+    let fresh_item = default_recall.items.iter().find(|i| i.memory.id == fresh_id).unwrap();
+    let old_item = default_recall.items.iter().find(|i| i.memory.id == old_id).unwrap();
+    assert!(
+        fresh_item.score > old_item.score,
+        "Fresh memory should rank higher under default recency decay"
+    );
+
+    // 2. With weight_recency = 0.0, memory age has zero impact on total_score
+    let no_recency_scoring = ScoringConfig::builder()
+        .similarity(0.80)
+        .importance(0.20)
+        .recency(0.0)
+        .reinforcement(0.0)
+        .build()
+        .unwrap();
+
+    let no_recency_recall = store
+        .recall(RecallRequest {
+            scope,
+            query_embedding: vec![1.0, 0.0, 0.0],
+            query_text: None,
+            limit: 5,
+            filters: Default::default(),
+            include_explanations: true,
+            mmr_lambda: None,
+            scoring: no_recency_scoring,
+        })
+        .unwrap();
+
+    assert_eq!(no_recency_recall.items.len(), 2);
+    let fresh_score = no_recency_recall.items.iter().find(|i| i.memory.id == fresh_id).unwrap().score;
+    let old_score = no_recency_recall.items.iter().find(|i| i.memory.id == old_id).unwrap().score;
+    assert_eq!(
+        fresh_score.to_bits(),
+        old_score.to_bits(),
+        "When weight_recency is 0.0, total_score must be identical regardless of age"
+    );
+}
+
+#[test]
+fn test_recency_half_life_days_decay_rate() {
+    let dir = tempdir().unwrap();
+    let config = MemoryConfig::builder(dir.path())
+        .dimensions(3)
+        .embedding_model("test-model")
+        .build()
+        .unwrap();
+
+    let store = MemoryStore::open(config).unwrap();
+    let scope = MemoryScope::new("acme", "decay-rate-test").unwrap();
+
+    let id = store
+        .remember(RememberRequest {
+            operation_id: None,
+            scope: scope.clone(),
+            content: "Two days old memory".into(),
+            embedding: vec![1.0, 0.0, 0.0],
+            kind: MemoryKind::Fact,
+            importance: 0.5,
+            expires_at_ms: None,
+            metadata: HashMap::new(),
+            source: HashMap::new(),
+        })
+        .unwrap();
+
+    // Set memory age to exactly 2 days ago
+    let now_ms = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_millis() as i64;
+    let db_conn = rusqlite::Connection::open(dir.path().join("memory.db")).unwrap();
+    db_conn
+        .execute(
+            "UPDATE memories SET created_at_ms = ? WHERE id = ?",
+            rusqlite::params![now_ms - 2 * 86_400_000, id],
+        )
+        .unwrap();
+
+    // Recall with 7-day half-life (default)
+    let recall_7d = store
+        .recall(RecallRequest {
+            scope: scope.clone(),
+            query_embedding: vec![1.0, 0.0, 0.0],
+            query_text: None,
+            limit: 5,
+            filters: Default::default(),
+            include_explanations: true,
+            mmr_lambda: None,
+            scoring: ScoringConfig::builder()
+                .similarity(0.5)
+                .importance(0.0)
+                .recency(0.5)
+                .reinforcement(0.0)
+                .half_life_days(7.0)
+                .build()
+                .unwrap(),
+        })
+        .unwrap();
+
+    // Recall with 1-day half-life
+    let recall_1d = store
+        .recall(RecallRequest {
+            scope,
+            query_embedding: vec![1.0, 0.0, 0.0],
+            query_text: None,
+            limit: 5,
+            filters: Default::default(),
+            include_explanations: true,
+            mmr_lambda: None,
+            scoring: ScoringConfig::builder()
+                .similarity(0.5)
+                .importance(0.0)
+                .recency(0.5)
+                .reinforcement(0.0)
+                .half_life_days(1.0)
+                .build()
+                .unwrap(),
+        })
+        .unwrap();
+
+    let recency_score_7d = recall_7d.items[0].explanation.as_ref().unwrap().recency_score;
+    let recency_score_1d = recall_1d.items[0].explanation.as_ref().unwrap().recency_score;
+
+    assert!(
+        recency_score_1d < recency_score_7d,
+        "Memory must decay faster with 1.0 day half-life ({recency_score_1d}) than 7.0 days ({recency_score_7d})"
+    );
+    // 2 days with 1-day half life is 2 half-lives: exp(-2) ≈ 0.1353
+    // 2 days with 7-day half life is 2/7 half-life: exp(-2/7) ≈ 0.7515
+    assert!((recency_score_1d - (-2.0f32 / 1.0).exp()).abs() < 0.05);
+    assert!((recency_score_7d - (-2.0f32 / 7.0).exp()).abs() < 0.05);
+}
+
+#[test]
+fn test_format_context_and_mmr_with_custom_scoring() {
+    let dir = tempdir().unwrap();
+    let config = MemoryConfig::builder(dir.path())
+        .dimensions(3)
+        .embedding_model("test-model")
+        .build()
+        .unwrap();
+
+    let store = MemoryStore::open(config).unwrap();
+    let scope = MemoryScope::new("acme", "pipeline-test").unwrap();
+
+    // Memory A: high importance (1.0), lower similarity (orthogonal query)
+    store
+        .remember(RememberRequest {
+            operation_id: None,
+            scope: scope.clone(),
+            content: "High importance rule".into(),
+            embedding: vec![0.0, 1.0, 0.0],
+            kind: MemoryKind::Instruction,
+            importance: 1.0,
+            expires_at_ms: None,
+            metadata: HashMap::new(),
+            source: HashMap::new(),
+        })
+        .unwrap();
+
+    // Memory B: lower importance (0.1), high similarity (parallel to query)
+    store
+        .remember(RememberRequest {
+            operation_id: None,
+            scope: scope.clone(),
+            content: "High similarity fact".into(),
+            embedding: vec![1.0, 0.0, 0.0],
+            kind: MemoryKind::Fact,
+            importance: 0.1,
+            expires_at_ms: None,
+            metadata: HashMap::new(),
+            source: HashMap::new(),
+        })
+        .unwrap();
+
+    // Scoring where importance dominates (weight_importance: 0.95, weight_similarity: 0.05)
+    let importance_heavy_scoring = ScoringConfig::builder()
+        .similarity(0.05)
+        .importance(0.95)
+        .recency(0.0)
+        .reinforcement(0.0)
+        .build()
+        .unwrap();
+
+    let req = RecallRequest {
+        scope,
+        query_embedding: vec![1.0, 0.0, 0.0],
+        query_text: None,
+        limit: 2,
+        filters: Default::default(),
+        include_explanations: true,
+        mmr_lambda: None,
+        scoring: importance_heavy_scoring,
+    };
+
+    let formatted = store
+        .format_context(
+            req,
+            ContextFormatOptions {
+                max_tokens: 500,
+                template: "- [{kind}] {content} (score: {score:.2})".into(),
+                header: None,
+                footer: None,
+            },
+        )
+        .unwrap();
+
+    // First formatted line should be the High importance rule because its total score is higher
+    let first_line = formatted.lines().next().unwrap();
+    assert!(
+        first_line.contains("High importance rule"),
+        "Context format should reflect custom scoring ranking, got: {first_line}"
+    );
+}
+
