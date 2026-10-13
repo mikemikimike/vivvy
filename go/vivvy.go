@@ -138,6 +138,15 @@ type MemoryRecord struct {
 	Source      map[string]any
 }
 
+// ScoringConfig customizes candidate reranking weights and decay.
+type ScoringConfig struct {
+	WeightSimilarity    float32 `json:"weight_similarity,omitempty"`
+	WeightImportance    float32 `json:"weight_importance,omitempty"`
+	WeightRecency       float32 `json:"weight_recency,omitempty"`
+	WeightReinforcement float32 `json:"weight_reinforcement,omitempty"`
+	RecencyHalfLifeDays float32 `json:"recency_half_life_days,omitempty"`
+}
+
 // RecallOptions selects and filters candidates for Store.Recall and
 // Store.FormatContext.
 type RecallOptions struct {
@@ -163,6 +172,9 @@ type RecallOptions struct {
 	// MMRLambda, if set (in [0, 1]), enables Maximal Marginal Relevance
 	// diversity reranking: 1.0 is pure relevance, 0.0 is pure diversity.
 	MMRLambda *float32
+
+	// Scoring customizes candidate reranking weights and decay.
+	Scoring *ScoringConfig
 }
 
 // Explanation breaks down how a ScoredMemory's score was computed.
@@ -248,6 +260,7 @@ type recallOptionsJSON struct {
 	CreatedBeforeMs     *int64         `json:"created_before_ms,omitempty"`
 	IncludeExplanations bool           `json:"include_explanations"`
 	MMRLambda           *float32       `json:"mmr_lambda,omitempty"`
+	Scoring             *ScoringConfig `json:"scoring,omitempty"`
 }
 
 type formatOptionsJSON struct {
@@ -323,6 +336,7 @@ func marshalRecallOptions(opts RecallOptions) ([]byte, error) {
 		CreatedBeforeMs:     opts.CreatedBeforeMs,
 		IncludeExplanations: opts.IncludeExplanations,
 		MMRLambda:           opts.MMRLambda,
+		Scoring:             opts.Scoring,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("vivvy: marshal recall options: %w", err)

@@ -172,3 +172,65 @@ fn close_and_free_string_accept_null_as_a_noop() {
         vivvy_free_string(ptr::null_mut());
     }
 }
+
+#[test]
+fn recall_with_and_without_custom_scoring() {
+    unsafe {
+        let (store, _dir) = open_test_store(3);
+
+        let record = cstr(r#"{"tenant_id":"acme","namespace":"scoring","content":"scored fact","importance":0.8}"#);
+        let vector: [f32; 3] = [1.0, 0.0, 0.0];
+        let mut out_id: *mut c_char = ptr::null_mut();
+
+        let code = vivvy_store_insert(
+            store,
+            record.as_ptr(),
+            vector.as_ptr(),
+            vector.len(),
+            &mut out_id,
+        );
+        assert_eq!(code, 0, "insert failed: {}", last_error());
+        assert!(!out_id.is_null());
+        vivvy_free_string(out_id);
+
+        // 1. Without scoring field in options_json
+        let options_default = cstr(r#"{"tenant_id":"acme","namespace":"scoring"}"#);
+        let mut out_results: *mut c_char = ptr::null_mut();
+        let code = vivvy_store_recall(
+            store,
+            options_default.as_ptr(),
+            vector.as_ptr(),
+            vector.len(),
+            ptr::null(),
+            5,
+            &mut out_results,
+        );
+        assert_eq!(code, 0, "default recall failed: {}", last_error());
+        assert!(!out_results.is_null());
+        let results_str = CStr::from_ptr(out_results).to_string_lossy().into_owned();
+        assert!(results_str.contains("default_v1_scoring"));
+        vivvy_free_string(out_results);
+
+        // 2. With scoring field in options_json
+        let options_custom = cstr(
+            r#"{"tenant_id":"acme","namespace":"scoring","scoring":{"weight_similarity":0.9,"weight_importance":0.1,"weight_recency":0.0,"weight_reinforcement":0.0,"recency_half_life_days":14.0}}"#,
+        );
+        let mut out_custom_results: *mut c_char = ptr::null_mut();
+        let code = vivvy_store_recall(
+            store,
+            options_custom.as_ptr(),
+            vector.as_ptr(),
+            vector.len(),
+            ptr::null(),
+            5,
+            &mut out_custom_results,
+        );
+        assert_eq!(code, 0, "custom recall failed: {}", last_error());
+        assert!(!out_custom_results.is_null());
+        let custom_str = CStr::from_ptr(out_custom_results).to_string_lossy().into_owned();
+        assert!(custom_str.contains("custom_scoring"));
+        vivvy_free_string(out_custom_results);
+
+        vivvy_store_close(store);
+    }
+}

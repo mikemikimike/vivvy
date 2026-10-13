@@ -333,6 +333,7 @@ pub unsafe extern "C" fn vivvy_store_recall(
             opts.user_id.as_deref(),
         )?;
         let filters = build_filters(&opts);
+        let scoring = opts.scoring.map(Into::into).unwrap_or_default();
 
         let req = RecallRequest {
             scope,
@@ -342,7 +343,7 @@ pub unsafe extern "C" fn vivvy_store_recall(
             filters,
             include_explanations: opts.include_explanations,
             mmr_lambda: opts.mmr_lambda,
-            scoring: Default::default(),
+            scoring,
         };
 
         let resp = store_ref.recall(req)?;
@@ -414,6 +415,7 @@ pub unsafe extern "C" fn vivvy_store_format_context(
             opts.user_id.as_deref(),
         )?;
         let filters = build_filters(&opts);
+        let scoring = opts.scoring.map(Into::into).unwrap_or_default();
 
         let req = RecallRequest {
             scope,
@@ -423,7 +425,7 @@ pub unsafe extern "C" fn vivvy_store_format_context(
             filters,
             include_explanations: false,
             mmr_lambda: opts.mmr_lambda,
-            scoring: Default::default(),
+            scoring,
         };
 
         let format_opts = match format_str {

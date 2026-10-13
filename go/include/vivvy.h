@@ -143,7 +143,8 @@ int vivvy_store_insert(const VivvyStore *store, const char *record_json,
  *                "created_after_ms": <int64, optional>,
  *                "created_before_ms": <int64, optional>,
  *                "include_explanations": <bool, optional, default true>,
- *                "mmr_lambda": <float 0..1, optional, enables MMR diversity reranking>}
+ *                "mmr_lambda": <float 0..1, optional, enables MMR diversity reranking>,
+ *                "scoring": <{"weight_similarity":.., "weight_importance":.., "weight_recency":.., "weight_reinforcement":.., "recency_half_life_days":..}, optional>}
  *
  * query_vector/dim: the query embedding.
  * query_text: optional NUL-terminated string; pass NULL for vector-only search.

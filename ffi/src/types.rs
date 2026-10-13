@@ -61,6 +61,52 @@ fn default_true() -> bool {
     true
 }
 
+fn default_similarity() -> f32 {
+    0.70
+}
+
+fn default_importance_weight() -> f32 {
+    0.15
+}
+
+fn default_recency() -> f32 {
+    0.10
+}
+
+fn default_reinforcement() -> f32 {
+    0.05
+}
+
+fn default_half_life() -> f32 {
+    7.0
+}
+
+#[derive(Debug, Clone, Copy, Deserialize)]
+pub struct ScoringConfigJson {
+    #[serde(default = "default_similarity")]
+    pub weight_similarity: f32,
+    #[serde(default = "default_importance_weight")]
+    pub weight_importance: f32,
+    #[serde(default = "default_recency")]
+    pub weight_recency: f32,
+    #[serde(default = "default_reinforcement")]
+    pub weight_reinforcement: f32,
+    #[serde(default = "default_half_life")]
+    pub recency_half_life_days: f32,
+}
+
+impl From<ScoringConfigJson> for vivvy_memory::ScoringConfig {
+    fn from(json: ScoringConfigJson) -> Self {
+        Self {
+            weight_similarity: json.weight_similarity,
+            weight_importance: json.weight_importance,
+            weight_recency: json.weight_recency,
+            weight_reinforcement: json.weight_reinforcement,
+            recency_half_life_days: json.recency_half_life_days,
+        }
+    }
+}
+
 /// Body of `options_json` for both `vivvy_store_recall` and
 /// `vivvy_store_format_context`: scope, filters, and scoring knobs. The query
 /// vector/text and top_k stay as dedicated C parameters since every recall
@@ -87,6 +133,8 @@ pub struct RecallOptionsJson {
     pub include_explanations: bool,
     #[serde(default)]
     pub mmr_lambda: Option<f32>,
+    #[serde(default)]
+    pub scoring: Option<ScoringConfigJson>,
 }
 
 /// Body of the optional `format_json` parameter for `vivvy_store_format_context`.

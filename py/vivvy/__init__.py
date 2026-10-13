@@ -10,6 +10,7 @@ from .embeddings import (
     OpenAIEmbedder,
     SentenceTransformersEmbedder,
 )
+from .scoring import ScoringConfig
 
 
 def _validate_embedder(store: MemoryStore, emb: Embedder) -> None:
@@ -191,6 +192,7 @@ def recall_text(
     filter_metadata: Optional[dict] = None,
     created_after_ms: Optional[int] = None,
     created_before_ms: Optional[int] = None,
+    scoring: Optional[Union[dict, ScoringConfig]] = None,
     *,
     embedder: Optional[Embedder] = None,
 ) -> List[Tuple[str, str, float]]:
@@ -212,6 +214,8 @@ def recall_text(
             f"but store expects {self.dimensions} dimensions."
         )
 
+    scoring_dict = scoring.to_dict() if isinstance(scoring, ScoringConfig) else scoring
+
     return self.recall(
         tenant_id=tenant_id,
         namespace=namespace,
@@ -225,6 +229,7 @@ def recall_text(
         filter_metadata=filter_metadata,
         created_after_ms=created_after_ms,
         created_before_ms=created_before_ms,
+        scoring_weights=scoring_dict,
     )
 
 
@@ -243,6 +248,7 @@ def format_context_text(
     filter_metadata: Optional[dict] = None,
     created_after_ms: Optional[int] = None,
     created_before_ms: Optional[int] = None,
+    scoring: Optional[Union[dict, ScoringConfig]] = None,
     *,
     embedder: Optional[Embedder] = None,
 ) -> str:
@@ -261,6 +267,8 @@ def format_context_text(
             f"but store expects {self.dimensions} dimensions."
         )
 
+    scoring_dict = scoring.to_dict() if isinstance(scoring, ScoringConfig) else scoring
+
     return self.format_context(
         tenant_id=tenant_id,
         namespace=namespace,
@@ -276,6 +284,7 @@ def format_context_text(
         filter_metadata=filter_metadata,
         created_after_ms=created_after_ms,
         created_before_ms=created_before_ms,
+        scoring_weights=scoring_dict,
     )
 
 
@@ -290,6 +299,7 @@ MemoryStore.format_context_text = format_context_text
 __all__ = [
     "Index",
     "MemoryStore",
+    "ScoringConfig",
     "Embedder",
     "OpenAIEmbedder",
     "SentenceTransformersEmbedder",
