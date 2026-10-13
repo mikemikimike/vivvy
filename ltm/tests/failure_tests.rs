@@ -67,6 +67,7 @@ fn test_fault_injection_remember_unapplied_op() {
             filters: MemoryFilter::default(),
             include_explanations: false,
             mmr_lambda: None,
+            scoring: Default::default(),
         })
         .unwrap();
 
@@ -130,6 +131,7 @@ fn test_fault_injection_update_unapplied_op() {
             filters: MemoryFilter::default(),
             include_explanations: false,
             mmr_lambda: None,
+            scoring: Default::default(),
         })
         .unwrap();
 
@@ -186,6 +188,7 @@ fn test_fault_injection_delete_unapplied_op() {
             filters: MemoryFilter::default(),
             include_explanations: false,
             mmr_lambda: None,
+            scoring: Default::default(),
         })
         .unwrap();
 
@@ -280,6 +283,7 @@ fn test_property_multi_tenant_isolation_fuzz() {
                         filters: MemoryFilter::default(),
                         include_explanations: false,
                         mmr_lambda: None,
+                        scoring: Default::default(),
                     })
                     .unwrap();
 
@@ -350,6 +354,7 @@ fn test_hostile_fts_inputs() {
             filters: MemoryFilter::default(),
             include_explanations: false,
             mmr_lambda: None,
+            scoring: Default::default(),
         });
 
         // Query execution MUST NOT panic or crash SQLite

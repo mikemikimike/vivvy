@@ -447,3 +447,126 @@ func TestMemoryStressNoUnboundedGrowth(t *testing.T) {
 			after-before, iterations, before, after)
 	}
 }
+
+func TestRecallWithCustomScoringConfig(t *testing.T) {
+	s := openTestStore(t, 3)
+
+	vec := []float32{1.0, 0.0, 0.0}
+	id, err := s.Insert(MemoryRecord{
+		TenantID:   "acme",
+		Namespace:  "default",
+		Content:    "domain rule",
+		Importance: f32ptr(0.8),
+	}, vec)
+	if err != nil {
+		t.Fatalf("Insert: %v", err)
+	}
+	if id == "" {
+		t.Fatal("expected non-empty id")
+	}
+
+	// 1. Recall with nil Scoring (defaults)
+	resDefault, err := s.Recall(RecallOptions{
+		TenantID:            "acme",
+		Namespace:           "default",
+		TopK:                5,
+		IncludeExplanations: true,
+	}, vec)
+	if err != nil {
+		t.Fatalf("Recall (default): %v", err)
+	}
+	if len(resDefault.Items) != 1 {
+		t.Fatalf("expected 1 item, got %d", len(resDefault.Items))
+	}
+	if resDefault.Items[0].Explanation == nil {
+		t.Fatal("expected explanation to be present")
+	}
+	hasDefaultNote := false
+	for _, note := range resDefault.Items[0].Explanation.PolicyNotes {
+		if strings.Contains(note, "default_v1_scoring") {
+			hasDefaultNote = true
+			break
+		}
+	}
+	if !hasDefaultNote {
+		t.Errorf("expected default_v1_scoring note, got %v", resDefault.Items[0].Explanation.PolicyNotes)
+	}
+
+	// 2. Recall with custom Scoring
+	customCfg := &ScoringConfig{
+		WeightSimilarity:    1.0,
+		WeightImportance:    0.0,
+		WeightRecency:       0.0,
+		WeightReinforcement: 0.0,
+		RecencyHalfLifeDays: 14.0,
+	}
+	resCustom, err := s.Recall(RecallOptions{
+		TenantID:            "acme",
+		Namespace:           "default",
+		TopK:                5,
+		IncludeExplanations: true,
+		Scoring:             customCfg,
+	}, vec)
+	if err != nil {
+		t.Fatalf("Recall (custom): %v", err)
+	}
+	if len(resCustom.Items) != 1 {
+		t.Fatalf("expected 1 item, got %d", len(resCustom.Items))
+	}
+	if resCustom.Items[0].Explanation == nil {
+		t.Fatal("expected explanation in custom recall")
+	}
+	hasCustomNote := false
+	for _, note := range resCustom.Items[0].Explanation.PolicyNotes {
+		if strings.Contains(note, "custom_scoring") {
+			hasCustomNote = true
+			break
+		}
+	}
+	if !hasCustomNote {
+		t.Errorf("expected custom_scoring note, got %v", resCustom.Items[0].Explanation.PolicyNotes)
+	}
+	// In partial override, omitted zero fields get default weights (imp=0.15, rec=0.10, reinf=0.05)
+	// Score: 1.0*1.0 + 0.15*0.8 + 0.10*1.0 = 1.22
+	expectedPartialScore := float32(1.0*1.0 + 0.15*0.8 + 0.10*1.0)
+	if diff := resCustom.Items[0].Score - expectedPartialScore; diff < -1e-4 || diff > 1e-4 {
+		t.Errorf("expected score ~ %f, got %f", expectedPartialScore, resCustom.Items[0].Score)
+	}
+
+	// Fully specified non-zero custom scoring
+	fullCfg := &ScoringConfig{
+		WeightSimilarity:    0.50,
+		WeightImportance:    0.30,
+		WeightRecency:       0.10,
+		WeightReinforcement: 0.10,
+		RecencyHalfLifeDays: 7.0,
+	}
+	resFull, err := s.Recall(RecallOptions{
+		TenantID:            "acme",
+		Namespace:           "default",
+		TopK:                5,
+		IncludeExplanations: true,
+		Scoring:             fullCfg,
+	}, vec)
+	if err != nil {
+		t.Fatalf("Recall (full custom): %v", err)
+	}
+	expectedFullScore := float32(0.50*1.0 + 0.30*0.8 + 0.10*1.0)
+	if diff := resFull.Items[0].Score - expectedFullScore; diff < -1e-4 || diff > 1e-4 {
+		t.Errorf("expected full score ~ %f, got %f", expectedFullScore, resFull.Items[0].Score)
+	}
+
+	// 3. FormatContext with custom Scoring
+	ctx, err := s.FormatContext(RecallOptions{
+		TenantID:  "acme",
+		Namespace: "default",
+		TopK:      5,
+		Scoring:   customCfg,
+	}, vec, FormatOptions{})
+	if err != nil {
+		t.Fatalf("FormatContext: %v", err)
+	}
+	if !strings.Contains(ctx, "domain rule") {
+		t.Errorf("expected formatted context to contain content, got %q", ctx)
+	}
+}

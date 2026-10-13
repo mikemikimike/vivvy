@@ -257,6 +257,37 @@ fn parse_scope(
     Ok(scope)
 }
 
+fn parse_scoring_config(
+    dict_opt: Option<&Bound<'_, PyDict>>,
+) -> PyResult<vivvy_memory::ScoringConfig> {
+    let mut config = vivvy_memory::ScoringConfig::default();
+    let Some(dict) = dict_opt else {
+        return Ok(config);
+    };
+
+    if let Some(val) = dict.get_item("weight_similarity")? {
+        config.weight_similarity = val.extract::<f32>()?;
+    }
+    if let Some(val) = dict.get_item("weight_importance")? {
+        config.weight_importance = val.extract::<f32>()?;
+    }
+    if let Some(val) = dict.get_item("weight_recency")? {
+        config.weight_recency = val.extract::<f32>()?;
+    }
+    if let Some(val) = dict.get_item("weight_reinforcement")? {
+        config.weight_reinforcement = val.extract::<f32>()?;
+    }
+    if let Some(val) = dict.get_item("recency_half_life_days")? {
+        config.recency_half_life_days = val.extract::<f32>()?;
+    }
+
+    config
+        .validate()
+        .map_err(|e| PyValueError::new_err(e.to_string()))?;
+
+    Ok(config)
+}
+
 // Python facade for vivvy_memory::MemoryStore
 #[pyclass(name = "MemoryStore")]
 struct PyMemoryStore {
@@ -458,7 +489,7 @@ impl PyMemoryStore {
     }
 
     #[allow(clippy::too_many_arguments)]
-    #[pyo3(signature = (tenant_id, namespace, query_embedding, query_text=None, limit=5, agent_id=None, user_id=None, include_explanations=true, mmr_lambda=None, filter_metadata=None, created_after_ms=None, created_before_ms=None))]
+    #[pyo3(signature = (tenant_id, namespace, query_embedding, query_text=None, limit=5, agent_id=None, user_id=None, include_explanations=true, mmr_lambda=None, filter_metadata=None, created_after_ms=None, created_before_ms=None, scoring_weights=None))]
     fn recall(
         &self,
         py: Python<'_>,
@@ -474,6 +505,7 @@ impl PyMemoryStore {
         filter_metadata: Option<&Bound<'_, PyDict>>,
         created_after_ms: Option<i64>,
         created_before_ms: Option<i64>,
+        scoring_weights: Option<&Bound<'_, PyDict>>,
     ) -> PyResult<Vec<(String, String, f32)>> {
         let scope = parse_scope(tenant_id, namespace, agent_id, user_id)?;
 
@@ -487,6 +519,8 @@ impl PyMemoryStore {
             ..Default::default()
         };
 
+        let scoring = parse_scoring_config(scoring_weights)?;
+
         let req = vivvy_memory::RecallRequest {
             scope,
             query_embedding: query_vec,
@@ -495,6 +529,7 @@ impl PyMemoryStore {
             filters,
             include_explanations,
             mmr_lambda,
+            scoring,
         };
 
         let store = self.inner.clone();
@@ -514,7 +549,7 @@ impl PyMemoryStore {
     }
 
     #[allow(clippy::too_many_arguments)]
-    #[pyo3(signature = (tenant_id, namespace, query_embedding, query_text=None, max_tokens=1500, limit=10, template=None, header=None, footer=None, agent_id=None, user_id=None, filter_metadata=None, created_after_ms=None, created_before_ms=None))]
+    #[pyo3(signature = (tenant_id, namespace, query_embedding, query_text=None, max_tokens=1500, limit=10, template=None, header=None, footer=None, agent_id=None, user_id=None, filter_metadata=None, created_after_ms=None, created_before_ms=None, scoring_weights=None))]
     fn format_context(
         &self,
         py: Python<'_>,
@@ -532,6 +567,7 @@ impl PyMemoryStore {
         filter_metadata: Option<&Bound<'_, PyDict>>,
         created_after_ms: Option<i64>,
         created_before_ms: Option<i64>,
+        scoring_weights: Option<&Bound<'_, PyDict>>,
     ) -> PyResult<String> {
         let scope = parse_scope(tenant_id, namespace, agent_id, user_id)?;
 
@@ -545,6 +581,8 @@ impl PyMemoryStore {
             ..Default::default()
         };
 
+        let scoring = parse_scoring_config(scoring_weights)?;
+
         let req = vivvy_memory::RecallRequest {
             scope,
             query_embedding: query_vec,
@@ -553,6 +591,7 @@ impl PyMemoryStore {
             filters,
             include_explanations: false,
             mmr_lambda: Some(0.5),
+            scoring,
         };
 
         let default_options = vivvy_memory::ContextFormatOptions::default();

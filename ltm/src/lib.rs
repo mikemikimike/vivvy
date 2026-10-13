@@ -18,7 +18,8 @@ pub use health::StoreHealth;
 pub use index_adapter::{InMemoryTestIndex, VectorIndex, VivvyVectorIndex};
 pub use model::{
     ContextFormatOptions, ForgetRequest, MemoryFilter, MemoryKind, MemoryRecord, MemoryStatus,
-    RecallExplanation, RecallItem, RecallRequest, RecallResponse, RememberRequest, UpdateRequest,
+    RecallExplanation, RecallItem, RecallRequest, RecallResponse, RememberRequest, ScoringConfig,
+    ScoringConfigBuilder, UpdateRequest,
 };
 pub use namespace::MemoryScope;
 pub use repository::Repository;
@@ -231,6 +232,8 @@ impl MemoryStore {
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap_or_default()
             .as_millis() as i64;
+        let half_life_ms = req.scoring.recency_half_life_days * 86_400_000.0;
+        let is_default_scoring = req.scoring == ScoringConfig::default();
 
         for mem_id in unique_candidate_ids {
             if let Some(record) = self.repo.get_by_scope_and_id(&req.scope, &mem_id)? {
@@ -288,19 +291,30 @@ impl MemoryStore {
                 let similarity = (1.0 - (distance / 2.0)).clamp(0.0, 1.0);
                 let importance = record.importance.clamp(0.0, 1.0);
 
-                // half-life decay (604_800_000 ms)
                 let age_ms = (now_ms - record.created_at_ms).max(0) as f32;
-                let recency_decay = (-age_ms / (7.0 * 86_400_000.0)).exp();
+                let recency_decay = (-age_ms / half_life_ms).exp();
 
                 let reinforcement = (record.access_count as f32 / 10.0).clamp(0.0, 1.0);
 
-                let total_score = 0.70 * similarity
-                    + 0.15 * importance
-                    + 0.10 * recency_decay
-                    + 0.05 * reinforcement;
+                let total_score = req.scoring.weight_similarity * similarity
+                    + req.scoring.weight_importance * importance
+                    + req.scoring.weight_recency * recency_decay
+                    + req.scoring.weight_reinforcement * reinforcement;
 
                 let explanation = if req.include_explanations {
-                    let mut notes = vec!["default_v1_scoring".to_string()];
+                    let mut notes = Vec::new();
+                    if is_default_scoring {
+                        notes.push("default_v1_scoring".to_string());
+                    } else {
+                        notes.push(format!(
+                            "custom_scoring(sim={:.2},imp={:.2},rec={:.2},reinf={:.2},half_life={:.1}d)",
+                            req.scoring.weight_similarity,
+                            req.scoring.weight_importance,
+                            req.scoring.weight_recency,
+                            req.scoring.weight_reinforcement,
+                            req.scoring.recency_half_life_days,
+                        ));
+                    }
                     if from_fts.contains(&mem_id) {
                         notes.push("fts5_lexical_candidate".to_string());
                     }

@@ -9,7 +9,7 @@
 - **Multi-Tenant Isolation** — every record is scoped by tenant, namespace, and optionally agent/user; scope boundaries are enforced at the SQL layer, not just in application code.
 - **Canonical SQLite WAL** — crash-safe durable storage with a 2-phase operation journal, so a crash mid-write never leaves the vector index and the record store disagreeing.
 - **Hybrid Recall** — dense HNSW vector search fused with SQLite FTS5 lexical search via Reciprocal Rank Fusion (RRF).
-- **Explainable Scoring & MMR** — a 4-factor weighted score (similarity, importance, recency, reinforcement) with an optional Maximal Marginal Relevance pass for result diversity.
+- **Configurable Scoring & MMR** — dynamic 4-factor scoring weights (similarity, importance, recency decay, reinforcement) with zero heap allocation ($O(1)$ 20-byte stack struct) and an optional Maximal Marginal Relevance pass for result diversity.
 - **Token-Budgeted Context Formatting** — render recall results straight into an LLM prompt with a custom template and a hard token budget.
 - **Live Online Backups** — crash-consistent SQLite snapshots without stopping operations; vector index is ephemeral and rebuilt on restore.
 - **Encryption at Rest** — optional per-tenant, field-level encryption (XChaCha20-Poly1305) of content, embeddings, metadata, and the operation journal, keyed via a pluggable `KeyProvider`. Scope, timestamps, and other query keys stay in plaintext so filtering and indexing keep working.
@@ -61,13 +61,15 @@ writes are sealed.
 
 ```toml
 [dependencies]
-vivvy-memory = "0.1.0-alpha"
+vivvy-memory = "0.1.0-beta"
 ```
 
 ## Quick start
 
 ```rust
-use vivvy_memory::{MemoryConfig, MemoryStore, MemoryScope, RememberRequest, RecallRequest, MemoryKind};
+use vivvy_memory::{
+    MemoryConfig, MemoryStore, MemoryScope, RememberRequest, RecallRequest, MemoryKind, ScoringConfig,
+};
 use std::collections::HashMap;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -91,6 +93,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     })?;
     println!("stored {id}");
 
+    // Custom scoring weights tailored for agent task:
+    let scoring = ScoringConfig::builder()
+        .similarity(0.85)
+        .importance(0.15)
+        .recency(0.0)
+        .reinforcement(0.0)
+        .build()?;
+
     let response = store.recall(RecallRequest {
         scope,
         query_embedding: vec![0.01; 1536],
@@ -99,6 +109,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         filters: Default::default(),
         include_explanations: true,
         mmr_lambda: Some(0.5),
+        scoring,
     })?;
     for item in response.items {
         println!("id={} score={:.4}", item.memory.id, item.score);
@@ -106,6 +117,44 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     Ok(())
 }
+```
+
+## Workload Tuning Recipes
+
+`ScoringConfig` defaults preserve exact historical behavior ($0.70$ similarity, $0.15$ importance, $0.10$ recency, $0.05$ reinforcement, $7.0$-day half-life). Tune weights for specific memory workloads:
+
+```rust
+// Recipe A: Technical Docs / Code Search (pure semantic relevance, zero age penalty)
+let docs_scoring = ScoringConfig::builder()
+    .similarity(0.90)
+    .importance(0.10)
+    .recency(0.0)
+    .reinforcement(0.0)
+    .build()?;
+
+// Recipe B: Real-time Conversational Assistant (dialogue freshness with 24h rapid decay)
+let chat_scoring = ScoringConfig::builder()
+    .similarity(0.35)
+    .importance(0.15)
+    .recency(0.50)
+    .half_life_days(1.0)
+    .build()?;
+
+// Recipe C: Core Persona & Instructions (critical rules outrank chatter)
+let instruction_scoring = ScoringConfig::builder()
+    .similarity(0.40)
+    .importance(0.60)
+    .recency(0.0)
+    .reinforcement(0.0)
+    .build()?;
+
+// Recipe D: Proven Workflows & Skills (heavily reinforce frequently executed routines)
+let workflow_scoring = ScoringConfig::builder()
+    .similarity(0.50)
+    .importance(0.15)
+    .recency(0.05)
+    .reinforcement(0.30)
+    .build()?;
 ```
 
 ## Documentation
