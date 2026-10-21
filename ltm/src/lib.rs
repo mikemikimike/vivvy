@@ -337,7 +337,7 @@ impl MemoryStore {
         let is_default_scoring = req.scoring == ScoringConfig::default();
 
         for mem_id in unique_candidate_ids {
-            if let Some(record) = self.repo.get_by_scope_and_id(&req.scope, &mem_id)? {
+            if let Some(record) = record_cache.get(&mem_id).and_then(Option::as_ref).cloned() {
                 if !record_matches_recall(&req, &record, now_ms) {
                     continue;
                 }
@@ -651,4 +651,70 @@ fn estimate_tokens(text: &str) -> usize {
         return 0;
     }
     (text.len() as f32 / 4.0).ceil() as usize
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::collections::HashMap;
+
+    #[test]
+    fn recall_reuses_scope_lookup_results_for_scoring() {
+        let dir = tempfile::tempdir().unwrap();
+        let config = MemoryConfig::builder(dir.path())
+            .dimensions(3)
+            .embedding_model("test-model")
+            .build()
+            .unwrap();
+        let store = MemoryStore::open(config).unwrap();
+        let requested_scope = MemoryScope::new("tenant-a", "support").unwrap();
+        let other_scope = MemoryScope::new("tenant-b", "support").unwrap();
+
+        for index in 0..20 {
+            store
+                .remember(RememberRequest {
+                    operation_id: None,
+                    scope: other_scope.clone(),
+                    content: format!("Other tenant memory {index}"),
+                    embedding: vec![1.0, 0.0, 0.0],
+                    kind: MemoryKind::Fact,
+                    importance: 1.0,
+                    expires_at_ms: None,
+                    metadata: HashMap::new(),
+                    source: HashMap::new(),
+                })
+                .unwrap();
+        }
+
+        let target_id = store
+            .remember(RememberRequest {
+                operation_id: None,
+                scope: requested_scope.clone(),
+                content: "Requested tenant memory".into(),
+                embedding: vec![0.8, 0.6, 0.0],
+                kind: MemoryKind::Preference,
+                importance: 1.0,
+                expires_at_ms: None,
+                metadata: HashMap::new(),
+                source: HashMap::new(),
+            })
+            .unwrap();
+
+        let before_recall = store.repo.scope_lookup_count();
+        let recall = store
+            .recall(RecallRequest::new(
+                requested_scope,
+                vec![1.0, 0.0, 0.0],
+                1,
+            ))
+            .unwrap();
+
+        assert_eq!(recall.items.len(), 1);
+        assert_eq!(recall.items[0].memory.id, target_id);
+        assert_eq!(
+            store.repo.scope_lookup_count() - before_recall,
+            21,
+            "each unique candidate, including cross-scope candidates cached as None, should be queried once"
+        );
+    }
 }
